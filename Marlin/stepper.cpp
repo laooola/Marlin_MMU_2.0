@@ -184,8 +184,13 @@ int32_t Stepper::ticks_nominal = -1;
   uint32_t Stepper::acc_step_rate; // needed for deceleration start point
 #endif
 
-volatile int32_t Stepper::endstops_trigsteps[XYZ],
-                 Stepper::count_position[NUM_AXIS] = { 0 };
+#if ENABLED(MULTI_MATERIAL_UNIT) && DISABLED(MMU_MASTER)
+  volatile int32_t Stepper::endstops_trigsteps[XYZE];
+#else
+  volatile int32_t Stepper::endstops_trigsteps[XYZ];
+#endif
+volatile int32_t Stepper::count_position[NUM_AXIS] = { 0 };
+
 int8_t Stepper::count_direction[NUM_AXIS] = {
   1, 1, 1, 1
   #if ENABLED(HANGPRINTER)
@@ -1664,7 +1669,9 @@ uint32_t Stepper::stepper_block_phase_isr() {
       if (X_MOVE_TEST) SBI(axis_bits, A_AXIS);
       if (Y_MOVE_TEST) SBI(axis_bits, B_AXIS);
       if (Z_MOVE_TEST) SBI(axis_bits, C_AXIS);
-      //if (!!current_block->steps[E_AXIS]) SBI(axis_bits, E_AXIS);
+      #if ENABLED(MULTI_MATERIAL_UNIT) && DISABLED(MMU_MASTER)
+        if (!!current_block->steps[E_AXIS]) SBI(axis_bits, E_AXIS);
+      #endif
       //if (!!current_block->steps[A_AXIS]) SBI(axis_bits, X_HEAD);
       //if (!!current_block->steps[B_AXIS]) SBI(axis_bits, Y_HEAD);
       //if (!!current_block->steps[C_AXIS]) SBI(axis_bits, Z_HEAD);

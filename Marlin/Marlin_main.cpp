@@ -449,7 +449,7 @@ static const float homing_feedrate_mm_s[] PROGMEM = {
     #if ENABLED(DELTA)
       MMM_TO_MMS(HOMING_FEEDRATE_Z), MMM_TO_MMS(HOMING_FEEDRATE_Z),
     #else
-      MMM_TO_MMS(HOMING_FEEDRATE_XY), MMM_TO_MMS(HOMING_FEEDRATE_XY),
+      MMM_TO_MMS(HOMING_FEEDRATE_X), MMM_TO_MMS(HOMING_FEEDRATE_Y),
     #endif
     MMM_TO_MMS(HOMING_FEEDRATE_Z), 0
   #endif
@@ -997,14 +997,38 @@ void servo_init() {
   void enableStepperDrivers() { SET_INPUT(STEPPER_RESET_PIN); }  // set to input, which allows it to be pulled high by pullups
 #endif
 
-#if ENABLED(EXPERIMENTAL_I2CBUS) && I2C_SLAVE_ADDRESS > 0
+#if ENABLED(MULTI_MATERIAL_UNIT)
+  #define MMU_READY 'R'
+  #define MMU_BUSY 'B'
+#endif
 
-  void i2c_on_receive(int bytes) { // just echo all bytes received to serial
-    i2c.receive(bytes);
+#if ENABLED(EXPERIMENTAL_I2CBUS) && I2C_SLAVE_ADDRESS > 0
+  
+  void i2c_on_receive(int bytes) {
+    #if ENABLED(MULTI_MATERIAL_UNIT) && DISABLED(MMU_MASTER)
+      static byte i2c_buffer[33];
+      uint8_t len = i2c.capture(i2c_buffer, 32); // capture only up to 32 bytes
+      i2c_buffer[len] = '\0';
+      enqueue_and_echo_command_now((char*) i2c_buffer);
+    #else
+      // just echo all bytes received to serial
+      i2c.receive(bytes);
+    #endif
   }
 
-  void i2c_on_request() {          // just send dummy data for now
-    i2c.reply("Hello World!\n");
+  void i2c_on_request() {
+    #if ENABLED(MULTI_MATERIAL_UNIT) && DISABLED(MMU_MASTER)
+      i2c.reset();
+      if (planner.movesplanned() > 0) {
+        i2c.addbyte(MMU_BUSY);
+      } else {
+        i2c.addbyte(MMU_READY);
+      }
+      i2c.reply();
+    #else
+      // just send dummy data for now
+      i2c.reply("Hello World!\n");
+    #endif
   }
 
 #endif
@@ -1755,6 +1779,9 @@ void do_blocking_move_to(const float rx, const float ry, const float rz, const f
 }
 void do_blocking_move_to_x(const float &rx, const float &fr_mm_s/*=0.0*/) {
   do_blocking_move_to(rx, current_position[Y_AXIS], current_position[Z_AXIS], fr_mm_s);
+}
+void do_blocking_move_to_y(const float &ry, const float &fr_mm_s/*=0.0*/) {
+  do_blocking_move_to(current_position[X_AXIS], ry, current_position[Z_AXIS], fr_mm_s);
 }
 void do_blocking_move_to_z(const float &rz, const float &fr_mm_s/*=0.0*/) {
   do_blocking_move_to(current_position[X_AXIS], current_position[Y_AXIS], rz, fr_mm_s);
@@ -12423,6 +12450,160 @@ inline void invalid_extruder_error(const uint8_t e) {
 
 #endif // PARKING_EXTRUDER
 
+#if ENABLED(MULTI_MATERIAL_UNIT)
+  #if DISABLED(MMU_MASTER)
+    bool mmu_filament_loading = false;
+    bool mmu_filament_sensor_hit = false;
+  
+    bool filament_loaded = false;
+  
+    constexpr uint8_t xy_bits = _BV(X_AXIS) | _BV(Y_AXIS);
+  
+    FORCE_INLINE bool isHomed() {
+      return (axis_homed & xy_bits) == xy_bits;
+    }
+  
+    void select_extruder(int tmp_extruder) {
+      if (!isHomed()) {
+        home_all_axes();
+      }
+      // move idler
+      do_blocking_move_to_y((tmp_extruder + 1) * 5);
+      // move selector
+      do_blocking_move_to_x(2.75 + 14 * (4 - tmp_extruder));
+    }
+  
+    void move_extruder(float length, float fr_mm_s = 0) {
+      set_destination_from_current();
+      destination[E_AXIS] += length;
+      if (fr_mm_s) {
+        feedrate_mm_s = fr_mm_s;
+      } else {
+        feedrate_mm_s = planner.max_feedrate_mm_s[E_AXIS];
+      }
+      prepare_move_to_destination();
+      planner.synchronize();
+    }
+  
+    bool load_filament() {
+      setup_for_endstop_or_probe_move();
+  
+      // move until destination reached or target hit
+      planner.synchronize();
+      endstops.enable(true);
+      mmu_filament_loading = true;
+      mmu_filament_sensor_hit = false;
+      move_extruder(100);
+      mmu_filament_loading = false;
+  
+      clean_up_after_endstop_or_probe_move();
+  
+      if (mmu_filament_sensor_hit) {
+        set_axis_is_at_home(E_AXIS);
+      }
+  
+      SYNC_PLAN_POSITION_KINEMATIC();
+  
+      endstops.hit_on_purpose();
+      endstops.not_homing();
+  
+      return mmu_filament_sensor_hit;
+    }
+  
+    inline void mmu_load(const uint8_t tmp_extruder) {
+      if (filament_loaded) {
+        SERIAL_ECHOLNPGM("Filament already loaded");
+      } else {
+        // load filament
+        select_extruder(tmp_extruder);
+        filament_loaded = load_filament();
+        if (!filament_loaded) {
+          SERIAL_ERROR_START();
+          SERIAL_ERRORLNPGM("Failed to load filament");
+        }
+      }
+    }
+  
+    inline void mmu_unload() {
+      if (!filament_loaded) {
+        SERIAL_ECHOLNPGM("Filament not loaded");
+      } else {
+        // unload filament
+        move_extruder((current_position[E_AXIS] + 35) * -1);
+        filament_loaded = false;
+  
+        // park idler
+        do_blocking_move_to_y(0);
+      }
+    }
+  
+    inline void mmu_continue() {
+      if (!filament_loaded) {
+        SERIAL_ECHOLNPGM("Filament not loaded");
+      } else {
+        // continue load filament (to printer)
+        move_extruder(200);
+      }
+    }
+  
+    inline void mmu_tool_change(const uint8_t tmp_extruder) {
+      if (active_extruder != tmp_extruder) {
+        if (filament_loaded) {
+          mmu_unload();
+        }
+        mmu_load(tmp_extruder);
+        if (filament_loaded) {
+          mmu_continue();
+        }
+      }
+    }
+  
+    inline void mmu_execute_cmd(const char cmd, const uint8_t tmp_extruder) {    
+      switch (cmd) {
+        case 'T':
+          mmu_tool_change(tmp_extruder);
+          break;
+        case 'L':
+          mmu_load(tmp_extruder);
+          break;
+        case 'U':
+          mmu_unload();
+          break;
+        case 'C':
+          mmu_continue();
+          break;
+      }     
+    }
+  #endif
+
+  inline void mmu_cmd(const char cmd, const uint8_t tmp_extruder) {
+    if (tmp_extruder < 0 || tmp_extruder >= MMU_MATERIALS) {
+      return invalid_extruder_error(tmp_extruder);
+    }
+    
+    #if ENABLED(MMU_MASTER)
+      // signal command to mmu slave (e.g. T0)
+      i2c.address(MMU_SLAVE_ADDRESS);
+      i2c.reset();
+      i2c.addbyte(cmd);
+      i2c.addbyte(tmp_extruder + '0');
+      i2c.send();
+
+      // wait until tool change is done
+      byte i2c_buffer[1];
+      do {
+        idle();
+        safe_delay(250);
+        i2c.request(1);
+        i2c.capture(i2c_buffer, 1);
+      } while (i2c_buffer[0] == MMU_BUSY);
+    #else
+      // execute command
+      mmu_execute_cmd(cmd, tmp_extruder);
+    #endif
+  }
+#endif
+
 /**
  * Perform a tool-change, which may result in moving the
  * previous tool out of the way and the new tool into place.
@@ -12575,6 +12756,10 @@ void tool_change(const uint8_t tmp_extruder, const float fr_mm_s/*=0.0*/, bool n
         select_multiplexed_stepper(tmp_extruder);
       #endif
 
+      #if ENABLED(MULTI_MATERIAL_UNIT)
+        mmu_cmd('T', tmp_extruder);
+      #endif
+
       // Set the new active extruder
       active_extruder = tmp_extruder;
 
@@ -12645,7 +12830,7 @@ inline void gcode_T(const uint8_t tmp_extruder) {
 void process_parsed_command() {
   KEEPALIVE_STATE(IN_HANDLER);
 
-  // Handle a known G, M, or T
+  // Handle a known G, M, T, L, U or C
   switch (parser.command_letter) {
     case 'G': switch (parser.codenum) {
 
@@ -13110,6 +13295,14 @@ void process_parsed_command() {
     break;
 
     case 'T': gcode_T(parser.codenum); break;                     // T: Tool Select
+
+    #if ENABLED(MULTI_MATERIAL_UNIT)
+      case 'L':                                                   // L: Load filament
+      case 'U':                                                   // U: Unload filament
+      case 'C':                                                   // C: Continue load filament (to printer)
+        mmu_cmd(parser.command_letter, parser.codenum);
+        break;              
+    #endif
 
     default: parser.unknown_command_error();
   }

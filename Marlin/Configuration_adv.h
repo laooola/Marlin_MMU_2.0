@@ -1337,6 +1337,15 @@
 //#define EXPERIMENTAL_I2CBUS
 #define I2C_SLAVE_ADDRESS  0 // Set a value from 8 to 127 to act as a slave
 
+#if ENABLED(MULTI_MATERIAL_UNIT)
+  #define EXPERIMENTAL_I2CBUS
+
+  #if DISABLED(MMU_MASTER)
+    #undef I2C_SLAVE_ADDRESS
+    #define I2C_SLAVE_ADDRESS MMU_SLAVE_ADDRESS
+  #endif
+#endif
+
 // @section extras
 
 /**

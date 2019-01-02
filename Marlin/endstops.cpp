@@ -407,6 +407,12 @@ void Endstops::update() {
     if (G38_move) UPDATE_ENDSTOP_BIT(Z, MIN_PROBE);
   #endif
 
+  #if ENABLED(MULTI_MATERIAL_UNIT) && DISABLED(MMU_MASTER) && HAS_Z_MIN
+    if (mmu_filament_loading) {
+      UPDATE_ENDSTOP_BIT(Z, MIN); 
+    }
+  #endif
+
   // With Dual X, endstops are only checked in the homing direction for the active extruder
   #if ENABLED(DUAL_X_CARRIAGE)
     #define E0_ACTIVE stepper.movement_extruder() == 0
@@ -580,6 +586,18 @@ void Endstops::update() {
         else if (stepper.axis_is_moving(Y_AXIS)) { _ENDSTOP_HIT(Y, MIN); planner.endstop_triggered(Y_AXIS); }
         else if (stepper.axis_is_moving(Z_AXIS)) { _ENDSTOP_HIT(Z, MIN); planner.endstop_triggered(Z_AXIS); }
         G38_endstop_hit = true;
+      }
+    }
+  #endif
+
+  #if ENABLED(MULTI_MATERIAL_UNIT) && DISABLED(MMU_MASTER) && HAS_Z_MIN
+    if (mmu_filament_loading) {
+      if (TEST_ENDSTOP(_ENDSTOP(Z, MIN))) {
+        if (stepper.axis_is_moving(E_AXIS)) {
+          _ENDSTOP_HIT(Z, MIN);
+          planner.endstop_triggered(E_AXIS);
+        }
+        mmu_filament_sensor_hit = true;
       }
     }
   #endif

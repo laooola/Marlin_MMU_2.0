@@ -1235,7 +1235,7 @@ static_assert(X_MAX_LENGTH >= X_BED_SIZE && Y_MAX_LENGTH >= Y_BED_SIZE,
 /**
  * Test Extruder Stepper Pins
  */
-#if DISABLED(MK2_MULTIPLEXER) // MK2_MULTIPLEXER uses E0 stepper only
+#if DISABLED(MK2_MULTIPLEXER) && DISABLED(MULTI_MATERIAL_UNIT) // MK2_MULTIPLEXER and MULTI_MATERIAL_UNIT uses E0 stepper only
   #if E_STEPPERS > 4
     #if !PIN_EXISTS(E4_STEP) || !PIN_EXISTS(E4_DIR) || !PIN_EXISTS(E4_ENABLE)
       #error "E4_STEP_PIN, E4_DIR_PIN, or E4_ENABLE_PIN not defined for this board."

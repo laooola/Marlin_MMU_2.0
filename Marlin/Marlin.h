@@ -203,6 +203,11 @@ extern const char axis_codes[XYZE];
               G38_endstop_hit; // flag from the interrupt handler to indicate if the endstop went active
 #endif
 
+#if ENABLED(MULTI_MATERIAL_UNIT) && DISABLED(MMU_MASTER)
+  extern bool mmu_filament_loading;     // flag to tell the interrupt handler that a filament load command is being run
+  extern bool mmu_filament_sensor_hit;  // flag from the interrupt handler to indicate if the filament sensor went active
+#endif
+
 void enable_all_steppers();
 void disable_e_stepper(const uint8_t e);
 void disable_e_steppers();
@@ -241,7 +246,7 @@ void clear_command_queue();
 #endif
 
 #define HAS_LCD_QUEUE_NOW (ENABLED(MALYAN_LCD) || (ENABLED(ULTIPANEL) && (ENABLED(AUTO_BED_LEVELING_UBL) || ENABLED(PID_AUTOTUNE_MENU) || ENABLED(ADVANCED_PAUSE_FEATURE))))
-#define HAS_QUEUE_NOW (ENABLED(SDSUPPORT) || HAS_LCD_QUEUE_NOW)
+#define HAS_QUEUE_NOW (ENABLED(SDSUPPORT) || HAS_LCD_QUEUE_NOW) || (ENABLED(MULTI_MATERIAL_UNIT) && DISABLED(MMU_MASTER))
 #if HAS_QUEUE_NOW
   // Return only when commands are actually enqueued
   void enqueue_and_echo_command_now(const char* cmd);
@@ -555,6 +560,7 @@ void prepare_move_to_destination();
  */
 void do_blocking_move_to(const float rx, const float ry, const float rz, const float &fr_mm_s=0);
 void do_blocking_move_to_x(const float &rx, const float &fr_mm_s=0);
+void do_blocking_move_to_y(const float &ry, const float &fr_mm_s=0);
 void do_blocking_move_to_z(const float &rz, const float &fr_mm_s=0);
 void do_blocking_move_to_xy(const float &rx, const float &ry, const float &fr_mm_s=0);
 

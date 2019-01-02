@@ -343,8 +343,16 @@
     float startCoord[NUM_AXIS] = { 0 }, endCoord[NUM_AXIS] = { 0 };
 
     const float startPosition = soft_endstop_min[encoderAxis] + 10,
-                endPosition = soft_endstop_max[encoderAxis] - 10,
-                feedrate = FLOOR(MMM_TO_MMS((encoderAxis == Z_AXIS) ? HOMING_FEEDRATE_Z : HOMING_FEEDRATE_XY));
+                endPosition = soft_endstop_max[encoderAxis] - 10;
+                feedrate;
+
+    if (encoderAxis == Z_AXIS) {
+      feedrate = = FLOOR(MMM_TO_MMS(HOMING_FEEDRATE_Z));
+    } else if (encoderAxis == X_AXIS) {
+      feedrate = FLOOR(MMM_TO_MMS(HOMING_FEEDRATE_X));
+    } else {
+      feedrate = FLOOR(MMM_TO_MMS(HOMING_FEEDRATE_Y));
+    }
 
     ec = false;
 
@@ -398,7 +406,13 @@
 
     int32_t startCount, stopCount;
 
-    feedrate = MMM_TO_MMS((encoderAxis == Z_AXIS) ? HOMING_FEEDRATE_Z : HOMING_FEEDRATE_XY);
+    if (encoderAxis == Z_AXIS) {
+      feedrate = MMM_TO_MMS(HOMING_FEEDRATE_Z);
+    } else if (encoderAxis == X_AXIS) {
+      feedrate = MMM_TO_MMS(HOMING_FEEDRATE_X);
+    } else {
+      feedrate = MMM_TO_MMS(HOMING_FEEDRATE_Y);
+    }
 
     bool oldec = ec;
     ec = false;

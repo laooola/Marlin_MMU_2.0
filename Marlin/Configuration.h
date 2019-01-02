@@ -142,11 +142,22 @@
 // You can use an online service to generate a random UUID. (eg http://www.uuidgenerator.net/version4)
 //#define MACHINE_UUID "00000000-0000-0000-0000-000000000000"
 
+#define MULTI_MATERIAL_UNIT
+#if ENABLED(MULTI_MATERIAL_UNIT)
+  #define MMU_MASTER 0                        // 3D printer microcontroller is master, mmu microcontroller is slave
+  #define MMU_SLAVE_ADDRESS 8
+  #define MMU_MATERIALS 5
+#endif
+
 // @section extruder
 
 // This defines the number of extruders
 // :[1, 2, 3, 4, 5]
 #define EXTRUDERS 1
+#if ENABLED(MULTI_MATERIAL_UNIT)
+  #undef EXTRUDERS
+  #define EXTRUDERS MMU_MATERIALS
+#endif
 
 // Generally expected filament diameter (1.75, 2.85, 3.0, ...). Used for Volumetric, Filament Width Sensor, etc.
 #define DEFAULT_NOMINAL_FILAMENT_DIA 3.0
@@ -454,6 +465,9 @@
  * *** IT IS HIGHLY RECOMMENDED TO LEAVE THIS OPTION ENABLED! ***
  */
 #define PREVENT_COLD_EXTRUSION
+#if ENABLED(MULTI_MATERIAL_UNIT) && DISABLED(MMU_MASTER)
+  #undef PREVENT_COLD_EXTRUSION
+#endif
 #define EXTRUDE_MINTEMP 170
 
 /**
@@ -462,6 +476,9 @@
  */
 #define PREVENT_LENGTHY_EXTRUDE
 #define EXTRUDE_MAXLENGTH 200
+#if ENABLED(MULTI_MATERIAL_UNIT) && DISABLED(MMU_MASTER)
+  #undef PREVENT_LENGTHY_EXTRUDE
+#endif
 
 //===========================================================================
 //======================== Thermal Runaway Protection =======================
@@ -875,6 +892,10 @@
 #define X_HOME_DIR -1
 #define Y_HOME_DIR -1
 #define Z_HOME_DIR -1
+#if ENABLED(MULTI_MATERIAL_UNIT) && DISABLED(MMU_MASTER)
+  #undef Z_HOME_DIR
+  #define Z_HOME_DIR 0
+#endif
 
 // @section machine
 
@@ -1149,8 +1170,15 @@
 #endif
 
 // Homing speeds (mm/m)
-#define HOMING_FEEDRATE_XY (50*60)
-#define HOMING_FEEDRATE_Z  (4*60)
+//#define HOMING_FEEDRATE_XY (50*60)
+#ifdef HOMING_FEEDRATE_XY
+  #define HOMING_FEEDRATE_X HOMING_FEEDRATE_XY
+  #define HOMING_FEEDRATE_Y HOMING_FEEDRATE_XY
+#else
+  #define HOMING_FEEDRATE_X (50*60)
+  #define HOMING_FEEDRATE_Y (50*60)
+#endif
+#define HOMING_FEEDRATE_Z (4*60)
 
 // @section calibrate
 
