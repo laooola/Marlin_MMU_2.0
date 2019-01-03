@@ -12468,9 +12468,9 @@ inline void invalid_extruder_error(const uint8_t e) {
         home_all_axes();
       }
       // move idler
-      do_blocking_move_to_y((tmp_extruder + 1) * 5);
+      do_blocking_move_to_y(2.25 + (tmp_extruder + 1) * 4.25);
       // move selector
-      do_blocking_move_to_x(2.75 + 14 * (4 - tmp_extruder));
+      do_blocking_move_to_x(0.75 + 14 * (4 - tmp_extruder));
     }
   
     void move_extruder(float length, float fr_mm_s = 0) {
@@ -12542,7 +12542,7 @@ inline void invalid_extruder_error(const uint8_t e) {
         SERIAL_ECHOLNPGM("Filament not loaded");
       } else {
         // continue load filament (to printer)
-        move_extruder(200);
+        move_extruder(1140);
       }
     }
   
