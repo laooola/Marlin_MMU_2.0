@@ -1000,6 +1000,9 @@ void servo_init() {
 #if ENABLED(MULTI_MATERIAL_UNIT)
   #define MMU_READY 'R'
   #define MMU_BUSY 'B'
+  #define MMU_ERROR 'E'
+
+  extern char mmu_state;
 #endif
 
 #if ENABLED(EXPERIMENTAL_I2CBUS) && I2C_SLAVE_ADDRESS > 0
@@ -1019,11 +1022,7 @@ void servo_init() {
   void i2c_on_request() {
     #if ENABLED(MULTI_MATERIAL_UNIT) && DISABLED(MMU_MASTER)
       i2c.reset();
-      if (planner.movesplanned() > 0) {
-        i2c.addbyte(MMU_BUSY);
-      } else {
-        i2c.addbyte(MMU_READY);
-      }
+      i2c.addbyte(mmu_state);
       i2c.reply();
     #else
       // just send dummy data for now
@@ -12452,6 +12451,7 @@ inline void invalid_extruder_error(const uint8_t e) {
 
 #if ENABLED(MULTI_MATERIAL_UNIT)
   #if DISABLED(MMU_MASTER)
+    char mmu_state = MMU_READY;
     bool mmu_filament_loading = false;
     bool mmu_filament_sensor_hit = false;
   
@@ -12509,6 +12509,11 @@ inline void invalid_extruder_error(const uint8_t e) {
   
       return mmu_filament_sensor_hit;
     }
+
+    bool unload_filament() {
+      move_extruder((current_position[E_AXIS] + 35) * -1);
+      return !TEST(endstops.state(), Z_MIN);
+    }
   
     inline void mmu_load(const uint8_t tmp_extruder) {
       if (filament_loaded) {
@@ -12529,31 +12534,44 @@ inline void invalid_extruder_error(const uint8_t e) {
         SERIAL_ECHOLNPGM("Filament not loaded");
       } else {
         // unload filament
-        move_extruder((current_position[E_AXIS] + 35) * -1);
-        filament_loaded = false;
-  
-        // park idler
-        do_blocking_move_to_y(0);
+        select_extruder(active_extruder);
+        filament_loaded = !unload_filament();
+        if (filament_loaded) {
+          SERIAL_ERROR_START();
+          SERIAL_ERRORLNPGM("Failed to unload filament");          
+        } else {
+          // park idler
+          do_blocking_move_to_y(0);
+        }
       }
     }
   
-    inline void mmu_continue() {
+    inline void mmu_continue(const uint8_t tmp_extruder) {
       if (!filament_loaded) {
         SERIAL_ECHOLNPGM("Filament not loaded");
       } else {
         // continue load filament (to printer)
-        move_extruder(1140);
+        select_extruder(tmp_extruder);
+        move_extruder(1120);
       }
     }
   
     inline void mmu_tool_change(const uint8_t tmp_extruder) {
       if (active_extruder != tmp_extruder) {
+        mmu_state = MMU_BUSY;
         if (filament_loaded) {
           mmu_unload();
         }
         mmu_load(tmp_extruder);
         if (filament_loaded) {
-          mmu_continue();
+          mmu_continue(tmp_extruder);
+          mmu_state = MMU_READY;
+          // slowly feed filament into extruder
+          move_extruder(20, planner.max_feedrate_mm_s[E_AXIS] / 4);
+          // park idler
+          do_blocking_move_to_y(0);
+        } else {
+          mmu_state = MMU_ERROR;
         }
       }
     }
@@ -12570,7 +12588,7 @@ inline void invalid_extruder_error(const uint8_t e) {
           mmu_unload();
           break;
         case 'C':
-          mmu_continue();
+          mmu_continue(tmp_extruder);
           break;
       }     
     }
